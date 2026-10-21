@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,6 +26,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: 'stable'
+          cache: true
+
+      # Génère/complète go.sum avant le build.
+      # Sans cette étape, Go 1.16+ refuse de compiler si go.sum est absent
+      # ou incomplet (mode -mod=readonly par défaut).
+      - name: Tidy dependencies
+        run: go mod tidy
 
       - name: Build ${{ matrix.app }}-${{ matrix.arch }}.exe
         run: |
