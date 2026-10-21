@@ -1,0 +1,35 @@
+name: build-windows
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:          # ajoute un bouton "Run workflow" dans l'onglet Actions
+
+jobs:
+  build:
+    runs-on: ubuntu-latest    # cross-compilation depuis Linux : gratuit, facteur 1x
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [sabotage, goblock]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Build ${{ matrix.app }}.exe
+        env:
+          CGO_ENABLED: '0'
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w -H=windowsgui" -o dist/${{ matrix.app }}.exe ./${{ matrix.app }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-windows-amd64
+          path: dist/${{ matrix.app }}.exe
+          if-no-files-found: error
