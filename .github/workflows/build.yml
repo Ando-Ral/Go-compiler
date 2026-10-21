@@ -3,15 +3,20 @@ name: build-windows
 on:
   push:
     branches: [main]
-  workflow_dispatch:          # ajoute un bouton "Run workflow" dans l'onglet Actions
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest    # cross-compilation depuis Linux : gratuit, facteur 1x
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        app: [sabotage, goblock]
+        app: [lockdown, goblock]
+        arch: [amd64]        # ajoute arm64 ici si tu veux aussi la version ARM
+    env:
+      CGO_ENABLED: '0'
+      GOOS: windows
+      GOARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v4
 
@@ -19,17 +24,16 @@ jobs:
         with:
           go-version: 'stable'
 
-      - name: Build ${{ matrix.app }}.exe
-        env:
-          CGO_ENABLED: '0'
-          GOOS: windows
-          GOARCH: amd64
+      - name: Build ${{ matrix.app }}-${{ matrix.arch }}.exe
         run: |
           mkdir -p dist
-          go build -trimpath -ldflags "-s -w -H=windowsgui" -o dist/${{ matrix.app }}.exe ./${{ matrix.app }}
+          go build -trimpath -ldflags "-s -w -H=windowsgui" -o dist/${{ matrix.app }}-${{ matrix.arch }}.exe ./${{ matrix.app }}
+
+      - name: Checksum SHA-256
+        run: sha256sum dist/${{ matrix.app }}-${{ matrix.arch }}.exe
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.app }}-windows-amd64
-          path: dist/${{ matrix.app }}.exe
+          name: ${{ matrix.app }}-windows-${{ matrix.arch }}
+          path: dist/${{ matrix.app }}-${{ matrix.arch }}.exe
           if-no-files-found: error
