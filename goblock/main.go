@@ -13,6 +13,9 @@ import (
 	"os/exec"
 	"strings"
 	"syscall"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 const createNoWindow = 0x08000000
@@ -30,11 +33,9 @@ var targets = []string{
 const prefix = "GOBLOCK_"
 
 // S-1-5-32-544 = BUILTIN\Administrators
-var adminsSid = syscall.SID{
-	Revision:            2,
-	SubAuthorityCount:   2,
-	IdentifierAuthority: syscall.SIDIdentifierAuthority{Value: [6]byte{0, 0, 0, 0, 0, 5}},
-	SubAuthority:        [syscall.SID_MAX_SUB_AUTHORITIES]uint32{32, 544},
+// On utilise CreateWellKnownSid pour éviter de manipuler la structure SID à la main.
+func adminsSid() (*windows.SID, error) {
+	return windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
 }
 
 // Lance un process enfant caché, sans récupérer de sortie.
@@ -55,14 +56,48 @@ func capture(name string, args ...string) string {
 	return string(out)
 }
 
+// Vérifie si le token est élevé (utilise GetTokenInformation / TokenElevation).
+func isTokenElevated(t windows.Token, out *bool) error {
+	var elevation uint32
+	var returned uint32
+	err := windows.GetTokenInformation(
+		t,
+		windows.TokenElevation,
+		(*byte)(unsafe.Pointer(&elevation)),
+		uint32(unsafe.Sizeof(elevation)),
+		&returned,
+	)
+	if err != nil {
+		return err
+	}
+	*out = elevation != 0
+	return nil
+}
+
 // Vrai uniquement si le jeton est réellement élevé (pas juste "membre du groupe").
 func isAdmin() bool {
-	t, err := syscall.OpenCurrentProcessToken()
+	sid, err := adminsSid()
+	if err != nil {
+		return false
+	}
+	defer windows.FreeSid(sid)
+
+	t, err := windows.OpenCurrentProcessToken()
 	if err != nil {
 		return false
 	}
 	defer t.Close()
-	ok, err := t.IsMember(&adminsSid)
+
+	// Pour tester l'élévation RÉELLE (token élevé vs filtré), on vérifie TokenElevation.
+	var elevated bool
+	if err := isTokenElevated(t, &elevated); err != nil {
+		return false
+	}
+	if !elevated {
+		return false
+	}
+
+	ok, err := t.IsMember(sid)
 	return err == nil && ok
 }
 
